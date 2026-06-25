@@ -13,13 +13,12 @@ local default_state = {
 }
 
 function M:create_file()
-  local name = self.options.file_name
+  -- Resolve to an absolute path so the file is independent of the cwd.
+  local name = vim.fn.fnamemodify(self.options.file_name, ":p")
 
+  -- Adopt an existing file rather than truncating it.
   if vim.uv.fs_stat(name) then
-    vim.notify(
-      "do.nvim: couldn't create. file already exists "..name,
-      vim.log.levels.WARN
-    )
+    return name
   end
 
   local f = io.open(name, "w")
@@ -61,10 +60,23 @@ function M:sync(force)
     return self
   end
 
-  if vim.fn.filewritable(self.file) then
-    vim.fn.writefile(self.tasks, self.file)
-  else
+  -- 0 (not writable) is still truthy in Lua, so compare explicitly.
+  if vim.fn.filewritable(self.file) ~= 1 then
     error(string.format("Cannot write file %s", self.file))
+  end
+
+  -- Write to a temp file and rename it over the target so a reader never sees a
+  -- truncated file. Resolve symlinks first and write through to the real path,
+  -- so a symlinked tasks file keeps its link instead of being replaced.
+  local target = vim.uv.fs_realpath(self.file) or self.file
+  local mode = (vim.uv.fs_stat(target) or {}).mode
+  local tmp = string.format("%s.%d.tmp", target, vim.fn.getpid())
+  vim.fn.writefile(self.tasks, tmp)
+  if mode then pcall(vim.uv.fs_chmod, tmp, mode % 4096) end
+  local ok, err = vim.uv.fs_rename(tmp, target)
+  if not ok then
+    vim.uv.fs_unlink(tmp)
+    error(string.format("Cannot write file %s: %s", target, err))
   end
 
   return self
@@ -118,7 +130,10 @@ M.init = function(options)
   local o = vim.tbl_deep_extend("keep", state, default_state)
   local instance = setmetatable(o, { __index = M })
 
-  return instance:set(instance:import_file() or {})
+  -- Load without writing back: init runs on every render, so writing here could
+  -- overwrite the file with an empty read. Only mutations write.
+  instance.tasks = instance:import_file() or {}
+  return instance
 end
 
 function M:has_items()
