@@ -52,6 +52,19 @@ function M:import_file()
   return self.file and vim.fn.readfile(self.file) or nil
 end
 
+--- Re-read tasks from disk in place for the render path. A file unreachable
+--- from the cwd is left as-is, so a transient miss does not drop the list.
+function M:reload()
+  local file = self:find_file()
+
+  if file then
+    self.file = file
+    self.tasks = vim.fn.readfile(file)
+  end
+
+  return self
+end
+
 function M:sync(force)
   if not self.file and (self.options.auto_create_file or force) then
     self.file = self:create_file()

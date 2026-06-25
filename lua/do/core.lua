@@ -143,8 +143,17 @@ function C.toggle_winbar()
   state.view_enabled = not state.view_enabled
 end
 
+--- Refresh the store from disk for a render without rebuilding it.
+local function reload_tasks()
+  if state.tasks then
+    state.tasks:reload()
+  else
+    state.tasks = store.init(state.options.store)
+  end
+end
+
 function C.view(variant)
-  state.tasks = store.init(state.options.store)
+  reload_tasks()
 
   if variant == 'active' then
     return view.render(state)
@@ -157,7 +166,7 @@ end
 
 ---for things like lualine
 function C.view_inactive()
-  state.tasks = store.init(state.options.store)
+  reload_tasks()
 
   return view.render_inactive(state)
 end
