@@ -53,19 +53,28 @@ function M:import_file()
 end
 
 --- Re-read tasks from disk in place for the render path. A file unreachable
---- from the cwd is left as-is, so a transient miss does not drop the list.
+--- from the cwd but still on disk keeps the tasks (a transient miss must not
+--- drop the list); a deleted file clears them to mirror it.
 function M:reload()
   local file = self:find_file()
 
   if file then
     self.file = file
     self.tasks = vim.fn.readfile(file)
+  elseif self.file and not vim.uv.fs_stat(self.file) then
+    self.file = nil
+    self.tasks = {}
   end
 
   return self
 end
 
 function M:sync(force)
+  -- Forget a deleted file so it is recreated below instead of erroring.
+  if self.file and not vim.uv.fs_stat(self.file) then
+    self.file = nil
+  end
+
   if not self.file and (self.options.auto_create_file or force) then
     self.file = self:create_file()
     assert(self.file, "file not set despite saving")
